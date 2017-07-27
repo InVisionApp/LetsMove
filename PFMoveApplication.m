@@ -299,7 +299,7 @@ static BOOL IsInApplicationsFolder(NSString *path) {
 	NSArray *userApplicationDirs = NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSUserDomainMask, YES);
 	for (NSString *appDir in userApplicationDirs) {
 		if ([path hasPrefix:appDir]) {
-			// if the user did not purposfully install into this directory, then they may want to move it to the /Application folder.
+			// if the user did not purposefully install into this directory, then they may want to move it to the /Application folder.
 			return [[NSUserDefaults standardUserDefaults] boolForKey:UserApplicationFolder];
 		}
 	}
