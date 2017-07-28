@@ -294,11 +294,11 @@ static BOOL IsInApplicationsFolder(NSString *path) {
 		if ([path hasPrefix:appDir]) return YES;
 	}
 
-	// Check if the app is installed in the suer Application directories
+	// Check if the app is installed in the user Application directories
 	NSArray *userApplicationDirs = NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSUserDomainMask, YES);
 	for (NSString *appDir in userApplicationDirs) {
 		if ([path hasPrefix:appDir]) {
-			// Fix the bug of the applicartion installoing into the wrong folder.
+			// Fix the bug for the applicartion installing into the wrong folder.
 			return [[NSUserDefaults standardUserDefaults] boolForKey:HasAskedUser];
 		}
 	}
