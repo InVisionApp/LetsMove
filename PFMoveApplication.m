@@ -43,7 +43,7 @@
 
 
 static NSString *AlertSuppressKey = @"moveToApplicationsFolderAlertSuppress";
-static NSString *UserApplicationFolder = @"com.potionfactory.LetsMove.UserApplicationFolder";
+static NSString *HasAskedUser = @"com.potionfactory.LetsMove.hasAskedUser";
 
 
 // Helper functions
@@ -137,6 +137,9 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 		[NSApp activateIgnoringOtherApps:YES];
 	}
 
+	[[NSUserDefaults standardUserDefaults] setBool:YES forKey:HasAskedUser];
+	[[NSUserDefaults standardUserDefaults] synchronize];
+
 	if ([alert runModal] == NSAlertFirstButtonReturn) {
 		NSLog(@"INFO -- Moving myself to the Applications folder");
 
@@ -210,6 +213,7 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 	// Save the alert suppress preference if checked
 	else if ([[alert suppressionButton] state] == NSOnState) {
 		[[NSUserDefaults standardUserDefaults] setBool:YES forKey:AlertSuppressKey];
+		[[NSUserDefaults standardUserDefaults] synchronize];
 	}
 
 	return;
@@ -263,29 +267,24 @@ static BOOL ShouldUseUserApplicationsFolder() {
 
 	NSString* applicationsDirectory = [[NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSLocalDomainMask, YES) lastObject] stringByResolvingSymlinksInPath];
 
-	BOOL useUserAppFolder = YES;
+	if (applicationsDirectory == nil){
+		return YES;
+	}
+	
+	NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+	{
+		[alert setMessageText:kStrMoveApplicationQuestionTitle];
+		[alert setInformativeText:kStrMoveApplicationQuestionUserFolderMessage];
 
-	if (applicationsDirectory != nil){
-		NSAlert *alert = [[[NSAlert alloc] init] autorelease];
-		{
-			[alert setMessageText:kStrMoveApplicationQuestionTitle];
-			[alert setInformativeText:kStrMoveApplicationQuestionUserFolderMessage];
+		// Add accept button
+		[alert addButtonWithTitle:kStrMoveApplicationButtonUserFolderEveryone];
 
-			// Add accept button
-			[alert addButtonWithTitle:kStrMoveApplicationButtonUserFolderEveryone];
-
-			// Add deny button
-			NSButton *cancelButton = [alert addButtonWithTitle:kStrMoveApplicationButtonUserFolderUser];
-			[cancelButton setKeyEquivalent:[NSString stringWithFormat:@"%C", 0x1b]]; // Escape key
-		}
-
-		useUserAppFolder = [alert runModal] != NSAlertFirstButtonReturn; // not the first button
+		// Add deny button
+		NSButton *cancelButton = [alert addButtonWithTitle:kStrMoveApplicationButtonUserFolderUser];
+		[cancelButton setKeyEquivalent:[NSString stringWithFormat:@"%C", 0x1b]]; // Escape key
 	}
 
-	NSUserDefaults* userDefaults = [NSUserDefaults standardUserDefaults];
-	[userDefaults setBool:useUserAppFolder forKey:UserApplicationFolder];
-	[userDefaults synchronize];
-	return useUserAppFolder;
+	return [alert runModal] != NSAlertFirstButtonReturn; // not the first button
 }
 
 static BOOL IsInApplicationsFolder(NSString *path) {
@@ -299,8 +298,8 @@ static BOOL IsInApplicationsFolder(NSString *path) {
 	NSArray *userApplicationDirs = NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSUserDomainMask, YES);
 	for (NSString *appDir in userApplicationDirs) {
 		if ([path hasPrefix:appDir]) {
-			// if the user did not purposefully install into this directory, then they may want to move it to the /Application folder.
-			return [[NSUserDefaults standardUserDefaults] boolForKey:UserApplicationFolder];
+			// Fix the bug of the applicartion installoing into the wrong folder.
+			return [[NSUserDefaults standardUserDefaults] boolForKey:HasAskedUser];
 		}
 	}
 
