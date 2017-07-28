@@ -27,6 +27,10 @@
 #define kStrMoveApplicationQuestionInfoWillRequirePasswd _I10NS(@"Note that this will require an administrator password.")
 #define kStrMoveApplicationQuestionInfoInDownloadsFolder _I10NS(@"This will keep your Downloads folder uncluttered.")
 
+#define kStrMoveApplicationQuestionUserFolderMessage _I10NS(@"Would you like me to be accessible for everyone who uses this computer?")
+#define kStrMoveApplicationButtonUserFolderEveryone _I10NS(@"Yes, for everyone")
+#define kStrMoveApplicationButtonUserFolderUser _I10NS(@"No, just for me")
+
 // Needs to be defined for compiling under 10.5 SDK
 #ifndef NSAppKitVersionNumber10_5
 	#define NSAppKitVersionNumber10_5 949
@@ -39,6 +43,7 @@
 
 
 static NSString *AlertSuppressKey = @"moveToApplicationsFolderAlertSuppress";
+static NSString *HasAskedUser = @"com.potionfactory.LetsMove.hasAskedUser";
 
 
 // Helper functions
@@ -54,6 +59,7 @@ static BOOL AuthorizedInstall(NSString *srcPath, NSString *dstPath, BOOL *cancel
 static BOOL CopyBundle(NSString *srcPath, NSString *dstPath);
 static NSString *ShellQuotedString(NSString *string);
 static void Relaunch(NSString *destinationPath);
+static BOOL ShouldUseUserApplicationsFolder();
 
 // Main worker function
 void PFMoveToApplicationsFolderIfNecessary(void) {
@@ -131,8 +137,21 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 		[NSApp activateIgnoringOtherApps:YES];
 	}
 
+	[[NSUserDefaults standardUserDefaults] setBool:YES forKey:HasAskedUser];
+	[[NSUserDefaults standardUserDefaults] synchronize];
+
 	if ([alert runModal] == NSAlertFirstButtonReturn) {
 		NSLog(@"INFO -- Moving myself to the Applications folder");
+
+		if (installToUserApplications && ShouldUseUserApplicationsFolder() == NO){
+			applicationsDirectory = [[NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSLocalDomainMask, YES) lastObject] stringByResolvingSymlinksInPath];
+
+			destinationPath = [applicationsDirectory stringByAppendingPathComponent:bundleName];
+
+			needAuthorization = ([fm isWritableFileAtPath:applicationsDirectory] == NO);
+			// Check if the destination bundle is already there but not writable
+			needAuthorization |= ([fm fileExistsAtPath:destinationPath] && ![fm isWritableFileAtPath:destinationPath]);
+		}
 
 		// Move
 		if (needAuthorization) {
@@ -194,6 +213,7 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 	// Save the alert suppress preference if checked
 	else if ([[alert suppressionButton] state] == NSOnState) {
 		[[NSUserDefaults standardUserDefaults] setBool:YES forKey:AlertSuppressKey];
+		[[NSUserDefaults standardUserDefaults] synchronize];
 	}
 
 	return;
@@ -243,11 +263,44 @@ static NSString *PreferredInstallLocation(BOOL *isUserDirectory) {
 	return [[NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSLocalDomainMask, YES) lastObject] stringByResolvingSymlinksInPath];
 }
 
+static BOOL ShouldUseUserApplicationsFolder() {
+
+	NSString* applicationsDirectory = [[NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSLocalDomainMask, YES) lastObject] stringByResolvingSymlinksInPath];
+
+	if (applicationsDirectory == nil){
+		return YES;
+	}
+	
+	NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+	{
+		[alert setMessageText:kStrMoveApplicationQuestionTitle];
+		[alert setInformativeText:kStrMoveApplicationQuestionUserFolderMessage];
+
+		// Add accept button
+		[alert addButtonWithTitle:kStrMoveApplicationButtonUserFolderEveryone];
+
+		// Add deny button
+		NSButton *cancelButton = [alert addButtonWithTitle:kStrMoveApplicationButtonUserFolderUser];
+		[cancelButton setKeyEquivalent:[NSString stringWithFormat:@"%C", 0x1b]]; // Escape key
+	}
+
+	return [alert runModal] != NSAlertFirstButtonReturn; // not the first button
+}
+
 static BOOL IsInApplicationsFolder(NSString *path) {
-	// Check all the normal Application directories
-	NSArray *applicationDirs = NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSAllDomainsMask, YES);
-	for (NSString *appDir in applicationDirs) {
+	// Check if the app is installed in the main Application directories
+	NSArray *localApplicationDirs = NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSLocalDomainMask, YES);
+	for (NSString *appDir in localApplicationDirs) {
 		if ([path hasPrefix:appDir]) return YES;
+	}
+
+	// Check if the app is installed in the user Application directories
+	NSArray *userApplicationDirs = NSSearchPathForDirectoriesInDomains(NSApplicationDirectory, NSUserDomainMask, YES);
+	for (NSString *appDir in userApplicationDirs) {
+		if ([path hasPrefix:appDir]) {
+			// Fix the bug for the applicartion installing into the wrong folder.
+			return [[NSUserDefaults standardUserDefaults] boolForKey:HasAskedUser];
+		}
 	}
 
 	// Also, handle the case that the user has some other Application directory (perhaps on a separate data partition).
