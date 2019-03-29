@@ -22,7 +22,7 @@
 #define kStrMoveApplicationQuestionTitle  _I10NS(@"Craft must be moved to the Applications folder")
 #define kStrMoveApplicationQuestionMessage _I10NS(@"This is a macOS security requirement. You can move it later, if you like.")
 #define kStrMoveApplicationButtonMove _I10NS(@"Move to Applications Folder")
-#define kStrMoveApplicationButtonQuit _I10NS(@"Quit")
+#define kStrMoveApplicationButtonQuit _I10NS(@"Not now")
 #define kStrMoveApplicationQuestionInfoWillRequirePasswd _I10NS(@"Note that this will require an administrator password.")
 #define kStrMoveApplicationQuestionInfoInDownloadsFolder _I10NS(@"This will keep your Downloads folder uncluttered.")
 
