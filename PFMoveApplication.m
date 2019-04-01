@@ -19,10 +19,11 @@
 // These are macros to be able to use custom i18n tools
 #define _I10NS(nsstr) NSLocalizedStringFromTable(nsstr, @"MoveApplication", nil)
 #define kStrMoveApplicationCouldNotMove _I10NS(@"Could not move to Applications folder")
-#define kStrMoveApplicationQuestionTitle  _I10NS(@"Craft must be moved to the Applications folder")
-#define kStrMoveApplicationQuestionMessage _I10NS(@"This is a macOS security requirement. You can move it later, if you like.")
+#define kStrMoveApplicationQuestionTitle  _I10NS(@"Move to Applications folder?")
+#define kStrMoveApplicationQuestionTitleHome _I10NS(@"Move to Applications folder in your Home folder?")
+#define kStrMoveApplicationQuestionMessage _I10NS(@"I can move myself to the Applications folder if you'd like.")
 #define kStrMoveApplicationButtonMove _I10NS(@"Move to Applications Folder")
-#define kStrMoveApplicationButtonQuit _I10NS(@"Not now")
+#define kStrMoveApplicationButtonDoNotMove _I10NS(@"Do Not Move")
 #define kStrMoveApplicationQuestionInfoWillRequirePasswd _I10NS(@"Note that this will require an administrator password.")
 #define kStrMoveApplicationQuestionInfoInDownloadsFolder _I10NS(@"This will keep your Downloads folder uncluttered.")
 
@@ -35,7 +36,15 @@
 	#define NSAppKitVersionNumber10_5 949
 #endif
 
+// By default, we use a small control/font for the suppression button.
+// If you prefer to use the system default (to match your other alerts),
+// set this to 0.
+#define PFUseSmallAlertSuppressCheckbox 1
+
+
+static NSString *AlertSuppressKey = @"moveToApplicationsFolderAlertSuppress";
 static NSString *HasAskedUser = @"com.potionfactory.LetsMove.hasAskedUser";
+
 
 // Helper functions
 static NSString *PreferredInstallLocation(BOOL *isUserDirectory);
@@ -51,10 +60,11 @@ static BOOL CopyBundle(NSString *srcPath, NSString *dstPath);
 static NSString *ShellQuotedString(NSString *string);
 static void Relaunch(NSString *destinationPath);
 static BOOL ShouldUseUserApplicationsFolder();
-static BOOL IsRunningOnReadOnlyVolume(NSString *path);
 
 // Main worker function
 void PFMoveToApplicationsFolderIfNecessary(void) {
+	// Skip if user suppressed the alert before
+	if ([[NSUserDefaults standardUserDefaults] boolForKey:AlertSuppressKey]) return;
 
 	// Path of the bundle
 	NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
@@ -62,9 +72,9 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 	// Check if the bundle is embedded in another application
 	BOOL isNestedApplication = IsApplicationAtPathNested(bundlePath);
 
-	// Skip if the application is not running on read only volume,
+	// Skip if the application is already in some Applications folder,
 	// unless it's inside another app's bundle.
-	if (!IsRunningOnReadOnlyVolume(bundlePath) && !isNestedApplication) return;
+	if (IsInApplicationsFolder(bundlePath) && !isNestedApplication) return;
 
 	// File Manager
 	NSFileManager *fm = [NSFileManager defaultManager];
@@ -89,7 +99,7 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 	{
 		NSString *informativeText = nil;
 
-		[alert setMessageText:kStrMoveApplicationQuestionTitle];
+		[alert setMessageText:(installToUserApplications ? kStrMoveApplicationQuestionTitleHome : kStrMoveApplicationQuestionTitle)];
 
 		informativeText = kStrMoveApplicationQuestionMessage;
 
@@ -109,8 +119,17 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 		[alert addButtonWithTitle:kStrMoveApplicationButtonMove];
 
 		// Add deny button
-		NSButton *cancelButton = [alert addButtonWithTitle:kStrMoveApplicationButtonQuit];
+		NSButton *cancelButton = [alert addButtonWithTitle:kStrMoveApplicationButtonDoNotMove];
 		[cancelButton setKeyEquivalent:[NSString stringWithFormat:@"%C", 0x1b]]; // Escape key
+
+		// Setup suppression button
+		[alert setShowsSuppressionButton:YES];
+
+		if (PFUseSmallAlertSuppressCheckbox) {
+			NSCell *cell = [[alert suppressionButton] cell];
+			[cell setControlSize:NSSmallControlSize];
+			[cell setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+		}
 	}
 
 	// Activate app -- work-around for focus issues related to "scary file from internet" OS dialog.
@@ -191,10 +210,10 @@ void PFMoveToApplicationsFolderIfNecessary(void) {
 
 		exit(0);
 	}
-	else
-    {
-		// We decided not to move. This means the app is in quarantine and we need to shut down
-		[[NSApplication sharedApplication] terminate:nil];
+	// Save the alert suppress preference if checked
+	else if ([[alert suppressionButton] state] == NSOnState) {
+		[[NSUserDefaults standardUserDefaults] setBool:YES forKey:AlertSuppressKey];
+		[[NSUserDefaults standardUserDefaults] synchronize];
 	}
 
 	return;
@@ -566,10 +585,3 @@ static void Relaunch(NSString *destinationPath) {
 
 	[NSTask launchedTaskWithLaunchPath:@"/bin/sh" arguments:[NSArray arrayWithObjects:@"-c", script, nil]];
 }
-
-static BOOL IsRunningOnReadOnlyVolume(NSString *bundlePath) {
-    struct statfs statfs_info;
-    statfs([bundlePath fileSystemRepresentation], &statfs_info);
-    return (statfs_info.f_flags & MNT_RDONLY) != 0;
-}
-
